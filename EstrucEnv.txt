@@ -1,0 +1,8 @@
+# esta es la base para el .env
+
+SECRET_KEY='django-insecure-sqrl@@k61!!oc_r8-n*a)v*_q=n+b0xcqw=y!i@g1kvum)md*k'
+DB_NAME='nombre de la base de datos'
+DB_USER='postgres'
+DB_PASSWORD='contraseña'
+DB_HOST='localhost'
+DB_PORT='5432' 
