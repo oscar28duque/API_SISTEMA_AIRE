@@ -1,14 +1,36 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
+import uuid
+
+class UsuarioManager(BaseUserManager):
+    def create_user(self, username, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError('El email es requerido')
+        email = self.normalize_email(email)
+        user = self.model(username=username, email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, username, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        return self.create_user(username, email, password, **extra_fields)
 
 #modelo de usuario
 class Usuario(AbstractUser):
+    ESTADO_CUENTA_CHOICES = [
+        ('activo', 'Activo'),
+        ('inactivo', 'Inactivo'),
+        ('bloqueado', 'Bloqueado'),
+    ]
+    
     email = models.EmailField(unique=True)
     estado_cuenta = models.CharField(
-        max_length=10, 
-        choices=[('activo', 'Activo'), ('inactivo', 'Inactivo')], 
+        max_length=10,
+        choices=ESTADO_CUENTA_CHOICES,
         default='activo'
     )
     fecha_registro = models.DateTimeField(auto_now_add=True)
@@ -16,17 +38,20 @@ class Usuario(AbstractUser):
     is_active = models.BooleanField(default=True)
     last_login = models.DateTimeField(null=True, blank=True)
     date_joined = models.DateTimeField(default=timezone.now)
-
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
-
+    
+    objects = UsuarioManager()
+    
+    USERNAME_FIELD = 'username'
+    EMAIL_FIELD = 'email'
+    REQUIRED_FIELDS = ['email']
+    
     class Meta:
         verbose_name = 'Usuario'
         verbose_name_plural = 'Usuarios'
         ordering = ['-date_joined']
-
+    
     def __str__(self):
-        return f"{self.get_full_name()} ({self.email})"
+        return f"{self.username} ({self.email})"
 
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
@@ -51,20 +76,23 @@ class Rol(models.Model):
 
 #modelo de usuario rol
 class UsuarioRol(models.Model):
-    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='roles_usuario')
-    rol = models.ForeignKey(Rol, on_delete=models.CASCADE, related_name='usuarios_rol')
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='usuario_roles')
+    rol = models.ForeignKey(Rol, on_delete=models.CASCADE, related_name='usuario_roles')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('usuario', 'rol')
         verbose_name = 'Usuario Rol'
         verbose_name_plural = 'Usuarios Roles'
+        unique_together = ('usuario', 'rol')
+
+    def __str__(self):
+        return f"{self.usuario.username} - {self.rol.nombre_rol}"
 
 #modelo de token de recuperacion
 class TokenRecuperacion(models.Model):
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='tokens_recuperacion')
-    token = models.TextField()
+    token = models.CharField(max_length=100, unique=True)
     fecha_generacion = models.DateTimeField(auto_now_add=True)
     fecha_expiracion = models.DateTimeField()
     is_active = models.BooleanField(default=True)
@@ -73,18 +101,24 @@ class TokenRecuperacion(models.Model):
         verbose_name = 'Token de Recuperación'
         verbose_name_plural = 'Tokens de Recuperación'
 
+    def __str__(self):
+        return f"Token para {self.usuario.username}"
+
 #modelo de registro de intento de login 
 class RegistroIntentoLogin(models.Model):
-    usuario = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='intentos_login')
-    email_ingresado = models.CharField(max_length=150)
-    fecha_hora = models.DateTimeField(auto_now_add=True)
-    exitoso = models.BooleanField()
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, null=True, blank=True, related_name='intentos_login')
+    email_ingresado = models.EmailField()
+    exitoso = models.BooleanField(default=False)
     ip = models.GenericIPAddressField()
-    user_agent = models.TextField(blank=True)
+    user_agent = models.TextField()
+    fecha_hora = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = 'Registro de Intento de Login'
         verbose_name_plural = 'Registros de Intentos de Login'
+
+    def __str__(self):
+        return f"Intento de {self.email_ingresado} - {'Exitoso' if self.exitoso else 'Fallido'}"
 
 #modelo de zona
 class Zona(models.Model):
