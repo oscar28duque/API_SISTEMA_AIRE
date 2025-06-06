@@ -14,7 +14,8 @@ from .models import (
 from .serializers import (
     UsuarioSerializer, LoginSerializer, UsuarioInfoSerializer,
     RolSerializer, UsuarioRolSerializer, TokenRecuperacionSerializer,
-    RegistroIntentoLoginSerializer
+    RegistroIntentoLoginSerializer, SensorSerializer, ZonaSerializer,
+    EstacionSerializer, LecturaSerializer, AlertaSerializer
 )
 import ipaddress
 from django.http import HttpRequest
@@ -23,6 +24,9 @@ from django.conf import settings
 import secrets
 from datetime import timedelta
 import logging
+import csv
+from datetime import datetime
+from django.http import HttpResponse
 
 logger = logging.getLogger(__name__)
 
@@ -371,9 +375,15 @@ def solicitar_recuperacion_password(request):
         )
         
         # Enviar email con el token
+        mensaje = f'Tu token de recuperación es: {token.token}'
+        print("\n" + "="*50)
+        print("TOKEN DE RECUPERACIÓN:")
+        print(mensaje)
+        print("="*50 + "\n")
+        
         send_mail(
             'Recuperación de contraseña',
-            f'Tu token de recuperación es: {token.token}',
+            mensaje,
             settings.EMAIL_HOST_USER,
             [email],
             fail_silently=False,
@@ -714,6 +724,32 @@ def sensor_detalle(request, pk):
         sensor.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def calibrar_sensor(request, pk):
+    sensor = get_object_or_404(Sensor, pk=pk)
+    sensor.fecha_ultima_calibracion = timezone.now().date()
+    sensor.estado = 'activo'
+    sensor.save()
+    serializer = SensorSerializer(sensor)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def lecturas_sensor(request, pk):
+    sensor = get_object_or_404(Sensor, pk=pk)
+    lecturas = Lectura.objects.filter(sensor=sensor)
+    serializer = LecturaSerializer(lecturas, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alertas_sensor(request, pk):
+    sensor = get_object_or_404(Sensor, pk=pk)
+    alertas = Alerta.objects.filter(sensor=sensor)
+    serializer = AlertaSerializer(alertas, many=True)
+    return Response(serializer.data)
+
 # CRUD Lecturas
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -853,3 +889,60 @@ def configuracion_dashboard_detalle(request, pk):
     elif request.method == 'DELETE':
         configuracion.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def generar_reporte_lecturas(request):
+    sensor_id = request.GET.get('sensor')
+    start_date = request.GET.get('start_date')
+    end_date = request.GET.get('end_date')
+
+    if not all([sensor_id, start_date, end_date]):
+        return Response(
+            {'error': 'Se requieren los parámetros sensor, start_date y end_date'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        sensor = Sensor.objects.get(id=sensor_id)
+        start_datetime = datetime.strptime(start_date, '%Y-%m-%d')
+        end_datetime = datetime.strptime(end_date, '%Y-%m-%d')
+        end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+
+        lecturas = Lectura.objects.filter(
+            sensor=sensor,
+            fecha_hora__range=(start_datetime, end_datetime)
+        ).order_by('fecha_hora')
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="reporte_sensor_{sensor_id}_{start_date}_{end_date}.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['ID', 'Sensor', 'Valor', 'Fecha/Hora', 'Calidad del Dato'])
+
+        for lectura in lecturas:
+            writer.writerow([
+                lectura.id,
+                f"{sensor.tipo_sensor} - {sensor.modelo}",
+                lectura.valor,
+                lectura.fecha_hora,
+                lectura.calidad_dato
+            ])
+
+        return response
+
+    except Sensor.DoesNotExist:
+        return Response(
+            {'error': 'Sensor no encontrado'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    except ValueError:
+        return Response(
+            {'error': 'Formato de fecha inválido. Use YYYY-MM-DD'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

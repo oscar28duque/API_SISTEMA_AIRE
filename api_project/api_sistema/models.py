@@ -3,6 +3,7 @@ from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils import timezone
 import uuid
+import secrets
 
 class UsuarioManager(BaseUserManager):
     def create_user(self, username, email, password=None, **extra_fields):
@@ -92,7 +93,7 @@ class UsuarioRol(models.Model):
 #modelo de token de recuperacion
 class TokenRecuperacion(models.Model):
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='tokens_recuperacion')
-    token = models.CharField(max_length=100, unique=True)
+    token = models.CharField(max_length=100, unique=True, default=secrets.token_urlsafe)
     fecha_generacion = models.DateTimeField(auto_now_add=True)
     fecha_expiracion = models.DateTimeField()
     is_active = models.BooleanField(default=True)
@@ -103,6 +104,11 @@ class TokenRecuperacion(models.Model):
 
     def __str__(self):
         return f"Token para {self.usuario.username}"
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(32)
+        super().save(*args, **kwargs)
 
 #modelo de registro de intento de login 
 class RegistroIntentoLogin(models.Model):
@@ -124,8 +130,6 @@ class RegistroIntentoLogin(models.Model):
 class Zona(models.Model):
     nombre_zona = models.CharField(max_length=100, unique=True)
     descripcion = models.TextField()
-    latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
@@ -141,8 +145,6 @@ class Zona(models.Model):
 class Estacion(models.Model):
     nombre_estacion = models.CharField(max_length=100, unique=True)
     ubicacion = models.TextField()
-    latitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitud = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     zona = models.ForeignKey(Zona, on_delete=models.CASCADE, related_name='estaciones')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

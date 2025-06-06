@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import Usuario, Rol, UsuarioRol, TokenRecuperacion, RegistroIntentoLogin
+from .models import Usuario, Rol, UsuarioRol, TokenRecuperacion, RegistroIntentoLogin, Sensor, Zona, Estacion, Lectura, Alerta
 import re
 import logging
 
@@ -228,4 +228,151 @@ class RegistroIntentoLoginSerializer(serializers.ModelSerializer):
     class Meta:
         model = RegistroIntentoLogin
         fields = ['id', 'usuario', 'email_ingresado', 'exitoso', 'ip', 'user_agent', 'fecha_hora']
-        read_only_fields = ['id', 'fecha_hora'] 
+        read_only_fields = ['id', 'fecha_hora']
+
+class SensorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Sensor
+        fields = [
+            'id', 'tipo_sensor', 'modelo', 'unidad_medida',
+            'fecha_instalacion', 'fecha_ultima_calibracion',
+            'estado', 'estacion', 'rango_minimo', 'rango_maximo',
+            'created_at', 'updated_at', 'is_active'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_estado(self, value):
+        estados_validos = ['activo', 'inactivo', 'mantenimiento', 'calibracion']
+        if value not in estados_validos:
+            raise serializers.ValidationError(
+                f"El estado debe ser uno de los siguientes: {', '.join(estados_validos)}"
+            )
+        return value
+
+    def validate_estacion(self, value):
+        if not value:
+            raise serializers.ValidationError("La estación es requerida")
+        return value
+
+    def validate_fecha_instalacion(self, value):
+        if not value:
+            raise serializers.ValidationError("La fecha de instalación es requerida")
+        return value
+
+    def validate(self, data):
+        if data.get('rango_minimo') is not None and data.get('rango_maximo') is not None:
+            if data['rango_minimo'] >= data['rango_maximo']:
+                raise serializers.ValidationError(
+                    "El rango mínimo debe ser menor que el rango máximo"
+                )
+        return data
+
+class ZonaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Zona
+        fields = [
+            'id', 'nombre_zona', 'descripcion',
+            'created_at', 'updated_at', 'is_active'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_nombre_zona(self, value):
+        if not value:
+            raise serializers.ValidationError("El nombre de la zona es requerido")
+        if Zona.objects.filter(nombre_zona=value).exists():
+            raise serializers.ValidationError("Ya existe una zona con este nombre")
+        return value
+
+class EstacionSerializer(serializers.ModelSerializer):
+    zona_nombre = serializers.CharField(source='zona.nombre_zona', read_only=True)
+
+    class Meta:
+        model = Estacion
+        fields = [
+            'id', 'nombre_estacion', 'ubicacion',
+            'zona', 'zona_nombre', 'created_at',
+            'updated_at', 'is_active'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'zona_nombre']
+
+    def validate_nombre_estacion(self, value):
+        if not value:
+            raise serializers.ValidationError("El nombre de la estación es requerido")
+        if Estacion.objects.filter(nombre_estacion=value).exists():
+            raise serializers.ValidationError("Ya existe una estación con este nombre")
+        return value
+
+    def validate_zona(self, value):
+        if not value:
+            raise serializers.ValidationError("La zona es requerida")
+        return value
+
+class LecturaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Lectura
+        fields = [
+            'id', 'sensor', 'valor', 'fecha_hora',
+            'calidad_dato', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_valor(self, value):
+        if value < -1000 or value > 1000:
+            raise serializers.ValidationError(
+                "El valor debe estar entre -1000 y 1000"
+            )
+        return value
+
+    def validate_calidad_dato(self, value):
+        calidades_validas = ['bueno', 'dudoso', 'malo']
+        if value not in calidades_validas:
+            raise serializers.ValidationError(
+                f"La calidad del dato debe ser una de las siguientes: {', '.join(calidades_validas)}"
+            )
+        return value
+
+    def validate_sensor(self, value):
+        if not value:
+            raise serializers.ValidationError("El sensor es requerido")
+        return value
+
+    def validate_fecha_hora(self, value):
+        if not value:
+            raise serializers.ValidationError("La fecha y hora son requeridas")
+        return value
+
+class AlertaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Alerta
+        fields = [
+            'id', 'sensor', 'tipo_alerta', 'descripcion',
+            'nivel_alerta', 'fecha_hora', 'atendida',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_tipo_alerta(self, value):
+        tipos_validos = ['error', 'advertencia', 'info']
+        if value not in tipos_validos:
+            raise serializers.ValidationError(
+                f"El tipo de alerta debe ser uno de los siguientes: {', '.join(tipos_validos)}"
+            )
+        return value
+
+    def validate_nivel_alerta(self, value):
+        niveles_validos = ['bajo', 'medio', 'alto']
+        if value not in niveles_validos:
+            raise serializers.ValidationError(
+                f"El nivel de alerta debe ser uno de los siguientes: {', '.join(niveles_validos)}"
+            )
+        return value
+
+    def validate_sensor(self, value):
+        if not value:
+            raise serializers.ValidationError("El sensor es requerido")
+        return value
+
+    def validate_fecha_hora(self, value):
+        if not value:
+            raise serializers.ValidationError("La fecha y hora son requeridas")
+        return value 

@@ -5,4 +5,8 @@ DB_NAME='nombre de la base de datos'
 DB_USER='postgres'
 DB_PASSWORD='contraseña'
 DB_HOST='localhost'
-DB_PORT='5432' 
+DB_PORT='5432'
+
+# Configuración de correo electrónico
+EMAIL_HOST_USER='oscarduquegar@gmail.com'
+EMAIL_HOST_PASSWORD='OscarDuque28' 
